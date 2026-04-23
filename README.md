@@ -2,13 +2,13 @@
 
 ## My story
 
-I was paying for Claude Max and kept hitting the 5-hour limit mid-afternoon. The math didn't work. I'd sit down at 9 AM and the window would already be half-gone, resetting at 10:47 AM instead of 2 PM.
+My team uses Claude Code intensively. We'd burn through the 5-hour usage limit within 2 hours of starting work, and then sit waiting for the window to reset. The problem was we never knew WHEN it would reset. The 5-hour clock started whenever the laptop first pinged Anthropic, not when we actually started coding.
 
-I dug into why and found the culprit in the Claude Code GitHub issues: macOS DarkWake. My laptop would briefly wake up around 5:34 AM to check notifications, Claude Code's persistent HTTPS connection would reconnect to Anthropic's servers, and that server-side touch was silently anchoring my 5-hour window to 5:34 AM. By the time I actually started coding, the window was running 5:34 AM to 10:34 AM. I was burning through the first 3.5 hours of every window while asleep.
+So one day a window would start at 6:23 AM from an overnight background process, close at 11:23 AM - we'd exhaust it by 11 AM and have a short, tolerable wait. The next day the ping landed at 4:47 AM, window ran 4:47 to 9:47, we exhausted it the moment we sat down, and waited hours. Completely unpredictable reset times meant we couldn't plan intensive work around the cycle.
 
-The fix turned out to be counter-intuitive: **you can't stop Claude from anchoring the window, but you CAN pick when it anchors.** Claude floors the 5-hour window to the clock hour of the first message after the prior window expires. Fire a message at 9:15 AM, the window runs 9 AM to 2 PM. So if I could just send one cheap message at exactly 9:15 AM every day, the window would align to my workday.
+What we wanted was to pick the hour the window should start, every day. Claude happens to floor the 5-hour window to the clock hour of the first message after the prior window expires. Fire a message at 9:15 AM, the window runs 9 AM to 2 PM. So if we could send one cheap message at the same hour every day, we'd control when the window rolls over and know exactly when fresh credits arrive.
 
-So I built `wua` to fire that one message automatically via the platform-native scheduler, at the time I choose, for under $0.001 per day. The window is shared across claude.ai, Claude Desktop, and Claude Code, so the desktop app I actually use benefits from the CLI-side anchor.
+So I built `wua` to fire that one message automatically via the platform-native scheduler, at the time we choose, for under $0.001 per day. The window is shared across claude.ai, Claude Desktop, and Claude Code, so the desktop app the team uses benefits from the CLI-side anchor.
 
 ## What wua does
 
@@ -20,11 +20,12 @@ So I built `wua` to fire that one message automatically via the platform-native 
 
 ## Who should use it
 
-- You pay for Claude Max or Claude Pro
-- You notice your 5-hour window resetting at weird times that don't match your workday
-- You use macOS (DarkWake pings), Linux, or Windows
+- You or your team use Claude Code intensively enough to hit the 5-hour limit during the workday
+- You want predictable window reset times so you can plan around the cycle
+- Your 5-hour window resets at times that don't match your work hours
+- You run macOS, Linux, or Windows
 
-If you only use Claude from the web (no local machine pings), Anthropic's native scheduled tasks at `claude.ai/code/scheduled` cover the same use case.
+If you only use Claude from the web and your usage is light, Anthropic's native scheduled tasks at `claude.ai/code/scheduled` cover the same use case.
 
 ## The mechanic
 
