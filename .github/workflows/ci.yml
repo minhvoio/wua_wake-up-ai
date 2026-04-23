@@ -258,13 +258,14 @@ jobs:
         shell: pwsh
         run: |
           # schtasks /Query exits 0 if task exists, non-zero otherwise.
-          # We need to suppress the error-on-non-zero behavior of pwsh and
-          # inspect the exit code explicitly.
+          # pwsh propagates $LASTEXITCODE as the script exit, so we must
+          # reset it to 0 at the end for the step to pass.
           $ErrorActionPreference = 'Continue'
           $null = & schtasks.exe /Query /TN "wua" 2>&1
-          $exitCode = $LASTEXITCODE
-          if ($exitCode -eq 0) {
+          $queryExit = $LASTEXITCODE
+          if ($queryExit -eq 0) {
             Write-Error "Task 'wua' still exists after uninstall (schtasks /Query returned 0)"
             exit 1
           }
-          Write-Host "Task removed successfully (schtasks /Query exit code: $exitCode)"
+          Write-Host "Task removed successfully (schtasks /Query exit code was: $queryExit)"
+          exit 0
