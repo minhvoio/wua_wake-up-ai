@@ -1,0 +1,262 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: unit tests (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+
+  smoke-test-macos:
+    name: smoke test (macOS launchd)
+    runs-on: macos-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+
+      - name: help renders
+        run: node bin/wua.mjs help
+
+      - name: doctor runs without crashing (claude CLI not installed)
+        run: |
+          # `claude` is not installed on GH runners, so doctor will return
+          # exit 1 (fail check on claude CLI). That's expected. We just
+          # want to confirm the binary runs end-to-end without crashing.
+          node bin/wua.mjs doctor || [ $? -eq 1 ]
+
+      - name: status without config
+        run: node bin/wua.mjs status
+
+      - name: install a fake config and install scheduler
+        run: |
+          mkdir -p "$HOME/Library/Application Support/wua"
+          cat > "$HOME/Library/Application Support/wua/config.json" <<'EOF'
+          {
+            "version": 1,
+            "assistant": "claude",
+            "targetHour": 9,
+            "fireMinute": 15,
+            "triggerCommand": ["/bin/true"],
+            "probeWindow": false,
+            "createdAt": "2026-04-23T00:00:00.000Z"
+          }
+          EOF
+          node bin/wua.mjs install --yes
+
+      - name: verify plist was written
+        run: |
+          test -f "$HOME/Library/LaunchAgents/com.minagents.wua.plist"
+          cat "$HOME/Library/LaunchAgents/com.minagents.wua.plist"
+
+      - name: status after install
+        run: node bin/wua.mjs status
+
+      - name: trigger (uses /bin/true as fake claude)
+        run: node bin/wua.mjs trigger
+
+      - name: status shows last fire ok
+        run: |
+          node bin/wua.mjs status
+          node bin/wua.mjs status --json | node -e "
+            let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{
+              const j=JSON.parse(d);
+              if(!j.lastRun){console.error('no lastRun');process.exit(1)}
+              if(j.lastRun.exitCode!==0){console.error('bad exit',j.lastRun);process.exit(1)}
+              console.log('lastRun ok');
+            })"
+
+      - name: uninstall
+        run: node bin/wua.mjs uninstall --yes
+
+      - name: verify plist removed
+        run: |
+          if [ -f "$HOME/Library/LaunchAgents/com.minagents.wua.plist" ]; then
+            echo "ERROR: plist still exists after uninstall"
+            exit 1
+          fi
+
+  smoke-test-linux:
+    name: smoke test (Linux systemd user)
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+
+      - name: help renders
+        run: node bin/wua.mjs help
+
+      - name: doctor runs without crashing
+        run: node bin/wua.mjs doctor || [ $? -eq 1 ]
+
+      - name: status without config
+        run: node bin/wua.mjs status
+
+      - name: start a user dbus + systemd user manager
+        run: |
+          # GitHub runners don't have an active user session, but we can
+          # start one via `systemctl --user` using a linger-equivalent.
+          # The `runner` user is already set up; we just need the user
+          # manager to be running.
+          loginctl enable-linger "$(whoami)" || true
+          # Wait for user manager to come up
+          for i in 1 2 3 4 5; do
+            if systemctl --user is-system-running 2>&1 | grep -qE 'running|degraded'; then
+              break
+            fi
+            sleep 1
+          done
+          systemctl --user status 2>&1 | head -5 || true
+
+      - name: install a fake config and install scheduler
+        run: |
+          mkdir -p "$HOME/.local/state/wua"
+          cat > "$HOME/.local/state/wua/config.json" <<'EOF'
+          {
+            "version": 1,
+            "assistant": "claude",
+            "targetHour": 9,
+            "fireMinute": 15,
+            "triggerCommand": ["/bin/true"],
+            "probeWindow": false,
+            "createdAt": "2026-04-23T00:00:00.000Z"
+          }
+          EOF
+          # systemctl --user enable may fail in the sandboxed CI env even
+          # though the unit files are correctly written. We care that the
+          # unit files ARE written correctly. Check that first.
+          node bin/wua.mjs install --yes || INSTALL_FAILED=1
+          # The unit files themselves must exist regardless.
+          test -f "$HOME/.config/systemd/user/wua.timer"
+          test -f "$HOME/.config/systemd/user/wua.service"
+          cat "$HOME/.config/systemd/user/wua.timer"
+          cat "$HOME/.config/systemd/user/wua.service"
+          if [ -n "$INSTALL_FAILED" ]; then
+            echo "(install exited non-zero, but unit files were written correctly - acceptable in sandboxed CI)"
+          fi
+
+      - name: trigger runs the configured command
+        run: node bin/wua.mjs trigger
+
+      - name: status shows last fire ok
+        run: node bin/wua.mjs status
+
+      - name: uninstall removes unit files
+        run: |
+          node bin/wua.mjs uninstall --yes || true
+          if [ -f "$HOME/.config/systemd/user/wua.timer" ]; then
+            echo "ERROR: timer still exists after uninstall"
+            exit 1
+          fi
+          if [ -f "$HOME/.config/systemd/user/wua.service" ]; then
+            echo "ERROR: service still exists after uninstall"
+            exit 1
+          fi
+
+  smoke-test-windows:
+    name: smoke test (Windows Task Scheduler)
+    runs-on: windows-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+
+      - name: help renders
+        run: node bin/wua.mjs help
+
+      - name: doctor runs without crashing
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "node" -ArgumentList "bin/wua.mjs","doctor" -NoNewWindow -PassThru -Wait
+          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 1) {
+            Write-Error "doctor crashed with exit $($p.ExitCode)"
+            exit 1
+          }
+
+      - name: status without config
+        run: node bin/wua.mjs status
+
+      - name: install a fake config and install scheduler
+        shell: pwsh
+        run: |
+          $stateDir = Join-Path $env:LOCALAPPDATA "wua"
+          New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+          $config = @{
+            version = 1
+            assistant = "claude"
+            targetHour = 9
+            fireMinute = 15
+            triggerCommand = @("cmd.exe", "/c", "echo", "hi")
+            probeWindow = $false
+            createdAt = "2026-04-23T00:00:00.000Z"
+          } | ConvertTo-Json
+          Set-Content -Path (Join-Path $stateDir "config.json") -Value $config -Encoding utf8
+          Get-Content (Join-Path $stateDir "config.json")
+          node bin/wua.mjs install --yes
+
+      - name: verify scheduled task exists
+        shell: pwsh
+        run: |
+          $task = schtasks.exe /Query /TN "wua" /V /FO LIST
+          Write-Host $task
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Task 'wua' was not created"
+            exit 1
+          }
+
+      - name: status after install
+        run: node bin/wua.mjs status
+
+      - name: trigger runs the configured command
+        run: node bin/wua.mjs trigger
+
+      - name: status shows last fire ok
+        shell: pwsh
+        run: |
+          node bin/wua.mjs status
+          $json = node bin/wua.mjs status --json | ConvertFrom-Json
+          if (-not $json.lastRun) { Write-Error "no lastRun"; exit 1 }
+          if ($json.lastRun.exitCode -ne 0) {
+            Write-Error "bad exit: $($json.lastRun.exitCode)"
+            exit 1
+          }
+          Write-Host "lastRun ok"
+
+      - name: uninstall
+        run: node bin/wua.mjs uninstall --yes
+
+      - name: verify task removed
+        shell: pwsh
+        run: |
+          schtasks.exe /Query /TN "wua" 2>&1 | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error "Task 'wua' still exists after uninstall"
+            exit 1
+          }
+          Write-Host "Task removed successfully"

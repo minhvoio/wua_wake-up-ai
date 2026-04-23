@@ -1,0 +1,46 @@
+{
+  "name": "@minagents/wua",
+  "version": "0.1.0",
+  "description": "Wake Up AI - Align your AI assistant's usage window to your workday by anchoring the 5-hour rolling window at a time you choose",
+  "type": "module",
+  "bin": {
+    "wua": "bin/wua.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "codex",
+    "ai",
+    "usage",
+    "5-hour-window",
+    "rate-limit",
+    "scheduler",
+    "launchd",
+    "systemd",
+    "task-scheduler",
+    "cron",
+    "warmup",
+    "cli"
+  ],
+  "author": "minhvoio",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minhvoio/wua_wake-up-ai.git"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1"
+  }
+}
