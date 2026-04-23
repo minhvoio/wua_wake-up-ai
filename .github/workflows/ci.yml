@@ -56,11 +56,13 @@ jobs:
             "assistant": "claude",
             "targetHour": 9,
             "fireMinute": 15,
-            "triggerCommand": ["/bin/true"],
+            "triggerCommand": ["/bin/echo", "hi"],
             "probeWindow": false,
             "createdAt": "2026-04-23T00:00:00.000Z"
           }
           EOF
+          # Verify the binary we picked actually exists on the runner
+          test -x /bin/echo
           node bin/wua.mjs install --yes
 
       - name: verify plist was written
@@ -140,11 +142,12 @@ jobs:
             "assistant": "claude",
             "targetHour": 9,
             "fireMinute": 15,
-            "triggerCommand": ["/bin/true"],
+            "triggerCommand": ["/bin/echo", "hi"],
             "probeWindow": false,
             "createdAt": "2026-04-23T00:00:00.000Z"
           }
           EOF
+          test -x /bin/echo
           # systemctl --user enable may fail in the sandboxed CI env even
           # though the unit files are correctly written. We care that the
           # unit files ARE written correctly. Check that first.
@@ -254,9 +257,14 @@ jobs:
       - name: verify task removed
         shell: pwsh
         run: |
-          schtasks.exe /Query /TN "wua" 2>&1 | Out-Null
-          if ($LASTEXITCODE -eq 0) {
-            Write-Error "Task 'wua' still exists after uninstall"
+          # schtasks /Query exits 0 if task exists, non-zero otherwise.
+          # We need to suppress the error-on-non-zero behavior of pwsh and
+          # inspect the exit code explicitly.
+          $ErrorActionPreference = 'Continue'
+          $null = & schtasks.exe /Query /TN "wua" 2>&1
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -eq 0) {
+            Write-Error "Task 'wua' still exists after uninstall (schtasks /Query returned 0)"
             exit 1
           }
-          Write-Host "Task removed successfully"
+          Write-Host "Task removed successfully (schtasks /Query exit code: $exitCode)"
