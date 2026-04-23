@@ -4,24 +4,68 @@
 
 Follow these steps exactly. Do not skip any step.
 
-### Step 1: Check Prerequisites
+### Step 1: Check Prerequisites and Install if Missing
 
-Run these commands and verify:
+#### Node.js
+
+Run:
 
 ```bash
-node -v   # Must be >= 18.0.0
-npm -v    # Must be available
+node -v
 ```
 
-If Node.js is missing or too old, stop and tell the user.
+If the command is not found or the version is below 18.0.0, install Node.js now. Use the right method for the user's OS:
 
-Also verify the Claude Code CLI is on the user's PATH:
+**macOS:**
+```bash
+# Option A: official installer (simplest for non-technical users)
+# Download and run the pkg from https://nodejs.org/en/download
+# Then verify:
+node -v
+
+# Option B: Homebrew (if they have it)
+brew install node
+```
+
+**Linux:**
+```bash
+# Use NodeSource for a current LTS version
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Or on RPM-based distros (Fedora, RHEL, CentOS):
+curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
+sudo yum install -y nodejs
+
+# Verify:
+node -v
+npm -v
+```
+
+**Windows:**
+```powershell
+# Option A: official installer (simplest for non-technical users)
+# Download and run the .msi from https://nodejs.org/en/download
+# Then in a new PowerShell window verify:
+node -v
+
+# Option B: winget (Windows Package Manager)
+winget install OpenJS.NodeJS.LTS
+# Then verify in a new terminal:
+node -v
+```
+
+After installing, run `node -v` again to confirm it returns `v18.x.x` or higher. If the version is still wrong or Node is still not found, ask the user to restart their terminal and try again.
+
+#### Claude Code CLI
+
+Run:
 
 ```bash
 claude --version
 ```
 
-If `claude` is not found, stop and tell the user to install Claude Code from https://docs.claude.com/en/docs/claude-code/setup before continuing.
+If `claude` is not found, tell the user to install Claude Code from https://docs.claude.com/en/docs/claude-code/setup and authenticate before continuing. Do not proceed without this - wua fires `claude -p hi` as its trigger, so if Claude Code is not installed and authenticated, the scheduled trigger will fail silently every day.
 
 ### Step 2: Install wua
 

@@ -135,8 +135,8 @@ The mechanic
 
 ## Requirements
 
-- Node.js 18 or newer
-- The `claude` CLI from [Claude Code](https://docs.claude.com/en/docs/claude-code/setup) installed and authenticated
+- **Node.js 18 or newer** - [nodejs.org/en/download](https://nodejs.org/en/download) (macOS/Windows: use the official installer; Linux: use [NodeSource](https://github.com/nodesource/distributions)). If you don't have it, the agent install guide will walk you through it.
+- **Claude Code CLI** - [docs.claude.com/en/docs/claude-code/setup](https://docs.claude.com/en/docs/claude-code/setup) installed and authenticated
 - macOS (10.15+), Linux with systemd, or Windows 10+
 
 ## Installation
