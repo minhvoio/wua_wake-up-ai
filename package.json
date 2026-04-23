@@ -35,7 +35,7 @@
     "url": "git+https://github.com/minhvoio/wua_wake-up-ai.git"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/floor-to-hour.test.mjs test/platform.test.mjs test/schedulers.test.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
