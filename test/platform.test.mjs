@@ -38,7 +38,9 @@ test('stateDir respects XDG_STATE_HOME on Linux', () => {
   process.env.XDG_STATE_HOME = '/tmp/xdg-test';
   try {
     const dir = stateDir('linux');
-    assert.equal(dir, '/tmp/xdg-test/wua');
+    // path.join on Windows uses backslash separators even for POSIX-style
+    // inputs, so we compare against path.join rather than hardcoded slashes.
+    assert.equal(dir, path.join('/tmp/xdg-test', 'wua'));
   } finally {
     if (saved) process.env.XDG_STATE_HOME = saved;
     else delete process.env.XDG_STATE_HOME;
