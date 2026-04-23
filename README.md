@@ -1,28 +1,34 @@
 # wua - Wake Up AI
 
-Align your AI assistant's 5-hour usage window to your workday so you stop paying for windows that drain before you sit down.
+## My story
 
-## The problem
+I was paying for Claude Max and kept hitting the 5-hour limit mid-afternoon. The math didn't work. I'd sit down at 9 AM and the window would already be half-gone, resetting at 10:47 AM instead of 2 PM.
 
-Claude's 5-hour usage window starts the moment your machine makes the first request. On macOS that can be as early as 5:34 AM when the OS briefly wakes up, reconnects to Anthropic's servers, and silently anchors your window. By the time you actually start coding at 9 AM, your 5-hour window has already burned 3.5 hours and resets at 10:34 AM instead of 2 PM. You hit the limit mid-afternoon and pay for extra usage.
+I dug into why and found the culprit in the Claude Code GitHub issues: macOS DarkWake. My laptop would briefly wake up around 5:34 AM to check notifications, Claude Code's persistent HTTPS connection would reconnect to Anthropic's servers, and that server-side touch was silently anchoring my 5-hour window to 5:34 AM. By the time I actually started coding, the window was running 5:34 AM to 10:34 AM. I was burning through the first 3.5 hours of every window while asleep.
 
-Same shape on Codex and ChatGPT Plus: a rolling window that tracks from first-use, and a weekly quota that also anchors to first-use after the prior week expires.
+The fix turned out to be counter-intuitive: **you can't stop Claude from anchoring the window, but you CAN pick when it anchors.** Claude floors the 5-hour window to the clock hour of the first message after the prior window expires. Fire a message at 9:15 AM, the window runs 9 AM to 2 PM. So if I could just send one cheap message at exactly 9:15 AM every day, the window would align to my workday.
+
+So I built `wua` to fire that one message automatically via the platform-native scheduler, at the time I choose, for under $0.001 per day. The window is shared across claude.ai, Claude Desktop, and Claude Code, so the desktop app I actually use benefits from the CLI-side anchor.
 
 ## What wua does
 
-wua installs a native scheduler entry (`launchd` on macOS, `systemd --user` on Linux, Task Scheduler on Windows) that fires one cheap message at a time you choose:
+- Fires one minimal Haiku message (`claude -p "hi" --model haiku --no-session-persistence`) once per day at a time you choose
+- Uses your platform's native scheduler: launchd on macOS, systemd user timer on Linux, Task Scheduler on Windows
+- Anchors your 5-hour window to the clock hour you pick (not whenever a background process happens to ping Anthropic)
+- Shows an agent-pasteable action plan in `wua status` so your AI coding assistant can help when something looks off
+- Costs under $0.001 per fire (source: [vdsmon/claude-warmup](https://github.com/vdsmon/claude-warmup), 126 stars, same mechanic)
 
-```
-claude -p "hi" --model haiku --no-session-persistence
-```
+## Who should use it
 
-Cost: well under $0.001 per fire. Effect: the 5-hour window is anchored to the clock hour you pick. When you sit down at 9 AM, the window runs 9 AM to 2 PM, not 5:34 AM to 10:34 AM.
+- You pay for Claude Max or Claude Pro
+- You notice your 5-hour window resetting at weird times that don't match your workday
+- You use macOS (DarkWake pings), Linux, or Windows
 
-The window is shared across claude.ai, Claude Desktop, and Claude Code, so firing through the CLI anchors the same window your Claude Desktop app uses.
+If you only use Claude from the web (no local machine pings), Anthropic's native scheduled tasks at `claude.ai/code/scheduled` cover the same use case.
 
 ## The mechanic
 
-Claude floors the 5-hour window to the clock hour of the first message. This is not in the official docs, but it is confirmed by multiple community tools (including the 126-star vdsmon/claude-warmup) and easy to verify on your own account:
+Claude floors the 5-hour window to the clock hour of the first message after the prior window expires. This is community-observed (not in Anthropic's official docs), corroborated across multiple tools including the 126-star [vdsmon/claude-warmup](https://github.com/vdsmon/claude-warmup) and easy to verify on your own account:
 
 | Fire time | Window anchor |
 |---|---|
@@ -33,7 +39,43 @@ Claude floors the 5-hour window to the clock hour of the first message. This is 
 
 wua defaults to firing at :15 past the target hour. Enough buffer for clock drift, still inside the target hour's bucket.
 
-## What you see
+## What you'll see
+
+This is real output from a setup targeting a 9 AM start-of-window on macOS.
+
+### `wua install`
+
+```
+wua - wake up ai
+
+Plan:
+
+  Scheduler:       launchd
+  Fire time:       9:15 AM daily
+  Window anchor:   9 AM to 2 PM
+  Scheduler runs:  /Users/you/.nvm/versions/node/v23.9.0/bin/node /Users/you/.../wua/bin/wua.mjs trigger
+  Which fires:     claude -p hi --model haiku --no-session-persistence
+  Log file:        /Users/you/Library/Application Support/wua/wua.log
+
+Impact:
+  Cost:            one Haiku message per day, under $0.001 per fire
+  Yearly estimate: under $0.36/year
+  Effect:          your 5-hour Claude window will anchor to 9 AM - 2 PM every day
+
+Options:
+  1. Install now (recommended)
+  2. Dry-run (show the plan only, do not load scheduler)
+  3. Cancel
+
+Choice [1/2/3, default 1]: 1
+
+ok  Installed. Entry: /Users/you/Library/LaunchAgents/com.minagents.wua.plist
+info  Next fire: Fri, Apr 24, 2026, 9:15 AM
+
+Verify later with `wua status`. Test now with `wua trigger`.
+```
+
+Every install shows the exact plan before it touches anything. Dry-run lets you see the full output without actually loading the scheduler.
 
 ### `wua status`
 
@@ -43,48 +85,27 @@ Status  platform=macOS  scheduler=launchd
 
 Config
   Assistant:     claude
-  Fire time:     8:15 AM daily
-  Window anchor: 8 AM to 1 PM
+  Fire time:     9:15 AM daily
+  Window anchor: 9 AM to 2 PM
 
 Scheduler
   Installed  /Users/you/Library/LaunchAgents/com.minagents.wua.plist
-  Next fire:    Fri, Apr 24, 2026, 8:15 AM
+  Next fire:    Fri, Apr 24, 2026, 9:15 AM
 
 Last fire
   never (wait for next scheduled fire, or run `wua trigger` to test)
 
 Action plan (paste to an AI agent if something looks off)
   ---8<---
-  wua v0.1.0 on macOS using launchd.
-  Configured: fire at 8:15 AM -> 5h window 8 AM-1 PM.
+  wua v0.1.1 on macOS using launchd.
+  Configured: fire at 9:15 AM -> 5h window 9 AM-2 PM.
   Command: claude -p hi --model haiku --no-session-persistence
   Scheduler: installed at /Users/you/Library/LaunchAgents/com.minagents.wua.plist.
   Last fire: never. Suggested action: run `wua trigger` to test.
   ---8<---
 ```
 
-The `---8<---` block is the **agent-pasteable action plan**. Paste the whole thing to Claude, Codex, Cursor, or any AI assistant when something looks off. It contains everything the agent needs to diagnose and suggest fixes without you explaining.
-
-### `wua install`
-
-```
-wua - wake up ai
-
-The following will be installed:
-
-  Scheduler:       launchd
-  Fire time:       8:15 AM daily
-  Window anchor:   8 AM to 1 PM
-  Scheduler runs:  /opt/node/bin/node /path/to/wua/bin/wua.mjs trigger
-  Which fires:     claude -p hi --model haiku --no-session-persistence
-  Log file:        /Users/you/Library/Application Support/wua/wua.log
-
-ok  Installed. Entry: /Users/you/Library/LaunchAgents/com.minagents.wua.plist
-
-Verify later with `wua status`. Test now with `wua trigger`.
-```
-
-Every install step shows you the exact files, commands, and paths that will be written before it touches anything. Nothing surprises you.
+The `---8<---` block is the agent-pasteable action plan. Paste the whole thing to Claude, Codex, Cursor, or any AI assistant when something looks off. It contains everything the agent needs to diagnose and suggest fixes without you explaining.
 
 ### `wua doctor`
 
@@ -96,7 +117,7 @@ Doctor  platform=macOS
   [ok] claude CLI present (2.1.89 (Claude Code))
          /Users/you/.local/bin/claude
   [ok] Config loaded
-         target hour 8, fire minute 15, assistant claude
+         target hour 9, fire minute 15, assistant claude
   [ok] Scheduler available: launchd
          launchd (per-user LaunchAgent)
   [ok] Scheduler entry installed
@@ -111,21 +132,39 @@ The mechanic
   Firing via the `claude` CLI anchors the same window the Desktop app uses.
 ```
 
-## Install
-
-Requirements:
+## Requirements
 
 - Node.js 18 or newer
 - The `claude` CLI from [Claude Code](https://docs.claude.com/en/docs/claude-code/setup) installed and authenticated
-- macOS, Linux with systemd, or Windows 10+
+- macOS (10.15+), Linux with systemd, or Windows 10+
+
+## Installation
+
+### For LLM Agents
+
+Paste this to your agent (Claude Code, OpenCode, Cursor, etc.):
+
+```
+Install wua and set up my 5-hour Claude window to anchor at 9 AM. Follow the guide:
+https://raw.githubusercontent.com/minhvoio/wua_wake-up-ai/main/docs/guide/installation.md
+```
+
+Or fetch the guide directly:
 
 ```bash
-# Run once with npx
-npx @minagents/wua setup
+curl -s https://raw.githubusercontent.com/minhvoio/wua_wake-up-ai/main/docs/guide/installation.md
+```
 
-# Or install globally
+The agent guide ([docs/guide/installation.md](./docs/guide/installation.md)) has numbered steps that tell the agent to PRESENT the install plan before ASKING for approval before EXECUTING. Your agent shows you exactly what will change, you approve, then it installs.
+
+### For Humans
+
+```bash
+# Install once globally
 npm install -g @minagents/wua
-wua setup
+
+# Or run without installing
+npx @minagents/wua setup
 ```
 
 Then:
@@ -140,17 +179,17 @@ wua status      # verify, see next fire time
 
 | Command | What it does |
 |---|---|
-| `wua setup` | Interactive wizard. Pick the hour your 5h window should start. |
-| `wua install` | Write the scheduler entry (launchd / systemd / Task Scheduler) and load it. Shows exactly what will be written, asks for approval. |
+| `wua setup` | Interactive wizard. Pick the hour your 5h window should start. Backs up existing config before overwrite. |
+| `wua install` | Write the scheduler entry (launchd / systemd / Task Scheduler) and load it. Shows a plan with impact + cost, offers dry-run. |
 | `wua status` | Config, schedule, next fire, last fire, optional live window state. Output is paste-able to an AI agent. |
 | `wua doctor` | Structured diagnostic: claude on PATH, scheduler available, config loaded. Explains the mechanic. |
-| `wua uninstall` | Remove the scheduler entry. Keeps your config so you can re-install without redoing setup. |
-| `wua trigger` | Fire the anchor message now. Normally called by the scheduler; run manually to test. |
+| `wua uninstall` | Remove the scheduler entry. Offers partial choice: keep config, or remove everything. |
+| `wua trigger` | Fire the anchor message now. Shows impact + asks to confirm when run interactively; fires silently from the scheduler. |
 
 Flags:
 
 - `--json` - machine-readable output for `setup`, `status`, `doctor`
-- `--yes` / `-y` - skip confirmations for `install` and `uninstall`
+- `--yes` / `-y` - skip confirmations for `install`, `uninstall`, `trigger`
 - `--no-probe` - skip the optional live window state call in `status`
 
 ## Supported platforms
@@ -165,7 +204,7 @@ CI runs the full `setup / install / status / trigger / uninstall` cycle on every
 
 Supported assistants:
 
-- **Claude Code** (v0.1.0)
+- **Claude Code** (v0.1.x)
 - Codex CLI support is planned for v0.2.0. The underlying mechanic is the same; the difference is Codex has two windows (5-hour and weekly), both anchored to first-use after expiry.
 
 ## How it works
@@ -185,11 +224,11 @@ src/schedulers/
   schtasks.mjs                Windows Task Scheduler XML
   index.mjs                   Adapter dispatcher
 src/commands/
-  setup.mjs                   Interactive wizard
-  install.mjs                 Write scheduler entry, verify
-  status.mjs                  Show current state
+  setup.mjs                   Interactive wizard (backs up config before overwrite)
+  install.mjs                 Write scheduler entry, verify loaded
+  status.mjs                  Show current state, agent-pasteable action plan
   doctor.mjs                  Diagnostic report
-  uninstall.mjs               Clean removal
+  uninstall.mjs               Clean removal (partial-choice ASK)
   trigger.mjs                 Called BY the scheduler: run claude -p, log result
 ```
 
@@ -210,6 +249,7 @@ wua keeps state per-user, no `$HOME` pollution:
 Inside:
 
 - `config.json` - your chosen hour, minute, assistant, trigger command
+- `config.json.bak-<timestamp>` - backup created by `wua setup` on overwrite
 - `last-run.json` - timestamp, exit code, stdout excerpt from the most recent fire
 - `wua.log` - append-only log of every fire
 
@@ -228,6 +268,16 @@ npm test
 27 unit tests for the pure-logic core: floor-to-hour math, platform detection, scheduler unit file generation. No OS side effects in tests.
 
 Plus platform smoke tests in CI (`.github/workflows/ci.yml`) that run the full lifecycle (`install -> status -> trigger -> uninstall`) on `macos-latest`, `ubuntu-latest`, and `windows-latest` against Node 18, 20, and 22.
+
+## Contributing
+
+See [AGENTS.md](./AGENTS.md) for architecture, conventions, and how to add a new scheduler adapter or assistant. Short version:
+
+- ESM only (.mjs), no TypeScript
+- chalk v5 isolated to `render.mjs`, every other file returns plain data
+- Hand-rolled flag parser, no CLI framework
+- Pure functions in `floor-to-hour.mjs` for testability
+- No em-dashes in code, comments, or output
 
 ## FAQ
 

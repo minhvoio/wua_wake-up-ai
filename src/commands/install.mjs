@@ -1,19 +1,19 @@
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import fs from 'node:fs';
 import { readConfig, resolveNodeBin, resolveWuaBin } from '../config.mjs';
 import { statePaths } from '../platform.mjs';
 import { getScheduler } from '../schedulers/index.mjs';
 import { computeWindow, formatHour12, formatTime12 } from '../floor-to-hour.mjs';
 import { success, warn, fail, info, banner } from '../render.mjs';
-import fs from 'node:fs';
 
 /**
  * `wua install` - writes the platform scheduler entry so `wua trigger` fires
  * at the configured time each day.
  *
  * UX rule: PRESENT the exact file path and command that will be written,
- * ASK for approval, then EXECUTE. Users should never be surprised by
- * what lands on their system.
+ * offer partial-choice ASK, EXECUTE only approved action, then VERIFY the
+ * scheduler actually loaded (not just that the file was written).
  *
  * @param {{ yes?: boolean, json?: boolean }} flags
  */
@@ -46,7 +46,7 @@ export async function cmdInstall(flags = {}) {
   // PRESENT
   console.log(banner());
   console.log('');
-  console.log('The following will be installed:');
+  console.log('Plan:');
   console.log('');
   console.log(`  Scheduler:       ${schedulerKind}`);
   console.log(`  Fire time:       ${formatTime12(target)} daily`);
@@ -55,18 +55,42 @@ export async function cmdInstall(flags = {}) {
   console.log(`  Which fires:     ${cfg.triggerCommand.join(' ')}`);
   console.log(`  Log file:        ${logFile}`);
   console.log('');
+  console.log('Impact:');
+  console.log(`  Cost:            one Haiku message per day, under $0.001 per fire`);
+  console.log(`  Yearly estimate: under $0.36/year`);
+  console.log(
+    `  Effect:          your 5-hour Claude window will anchor to ${formatHour12(window.startHour)} - ${formatHour12(window.endHour)} every day`
+  );
+  console.log('');
 
+  // ASK - partial choices, not just Y/n
+  let action = 'install';
   if (!flags.yes) {
     const rl = readline.createInterface({ input, output });
     try {
-      const ans = await rl.question('Install? [Y/n]: ');
-      if (/^n/i.test(ans.trim())) {
-        console.log(warn('Cancelled. Nothing installed.'));
-        return 0;
-      }
+      console.log('Options:');
+      console.log('  1. Install now (recommended)');
+      console.log('  2. Dry-run (show the plan only, do not load scheduler)');
+      console.log('  3. Cancel');
+      console.log('');
+      const ans = await rl.question('Choice [1/2/3, default 1]: ');
+      const t = ans.trim();
+      if (t === '2') action = 'dryrun';
+      else if (t === '3' || /^n/i.test(t)) action = 'cancel';
     } finally {
       rl.close();
     }
+  }
+
+  if (action === 'cancel') {
+    console.log(warn('Cancelled. Nothing installed.'));
+    return 0;
+  }
+
+  if (action === 'dryrun') {
+    console.log(info('Dry-run: no scheduler entry written. The plan above shows exactly what install would do.'));
+    console.log(info('Run `wua install` again and choose 1 to actually install.'));
+    return 0;
   }
 
   // EXECUTE
@@ -79,8 +103,18 @@ export async function cmdInstall(flags = {}) {
 
   console.log(success(`Installed. Entry: ${result.entryPath}`));
 
-  // Verify by reading status back.
+  // VERIFY - read status back and confirm installed=true
   const s = impl.status();
+  if (!s.installed) {
+    console.log(
+      warn(
+        `Scheduler file was written but the system did not report it as installed. ` +
+          `Run \`wua doctor\` to investigate.`
+      )
+    );
+    return 1;
+  }
+
   if (s.nextFireRaw) {
     console.log(info(`Next fire: ${s.nextFireRaw}`));
   }

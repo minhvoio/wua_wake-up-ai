@@ -1,14 +1,19 @@
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import fs from 'node:fs';
 import { DEFAULT_CONFIG, readConfig, writeConfig } from '../config.mjs';
+import { statePaths } from '../platform.mjs';
 import { checkClaude } from '../claude-check.mjs';
 import { computeWindow, formatHour12, formatTime12 } from '../floor-to-hour.mjs';
 import { renderSetupHeader, renderPlannedSchedule, success, warn, fail, info } from '../render.mjs';
 
 /**
- * Interactive setup wizard. Runs end-to-end in one terminal session.
- * Writes config but does NOT install the scheduler. User runs `wua install`
- * next so they can review before anything touches their system.
+ * Interactive setup wizard. Writes config but does NOT install the scheduler.
+ * User runs `wua install` next so they can review before anything touches
+ * their system.
+ *
+ * If an existing config is found, we back it up to config.json.bak-<timestamp>
+ * before overwriting so the user can roll back.
  *
  * @param {{ json?: boolean }} flags
  */
@@ -32,10 +37,16 @@ export async function cmdSetup(flags = {}) {
   const defaults = existing || DEFAULT_CONFIG;
 
   if (flags.json) {
-    // non-interactive shortcut: just print the defaults and exit. Real
-    // interactive use goes through the wizard below.
     console.log(JSON.stringify(defaults, null, 2));
     return 0;
+  }
+
+  if (existing) {
+    console.log(
+      info(
+        `Existing config will be backed up to config.json.bak-<timestamp> before overwrite.`
+      )
+    );
   }
 
   const rl = readline.createInterface({ input, output });
@@ -49,7 +60,6 @@ export async function cmdSetup(flags = {}) {
     );
     console.log('');
 
-    // Step 2: pick target hour.
     const hourAns = await rl.question(
       `Start-of-window hour (0-23, default ${defaults.targetHour}): `
     );
@@ -59,7 +69,6 @@ export async function cmdSetup(flags = {}) {
       return 1;
     }
 
-    // Step 3: pick fire minute within the hour (default 15).
     const minuteAns = await rl.question(
       `Fire minute within that hour (0-59, default ${defaults.fireMinute}): `
     );
@@ -69,7 +78,6 @@ export async function cmdSetup(flags = {}) {
       return 1;
     }
 
-    // Step 4: PRESENT plan before writing anything.
     const cfg = {
       ...defaults,
       targetHour,
@@ -88,11 +96,23 @@ export async function cmdSetup(flags = {}) {
     );
     console.log('');
 
-    // Step 5: ASK to save.
     const confirm = await rl.question('Save this config? [Y/n]: ');
     if (/^n/i.test(confirm.trim())) {
       console.log(warn('Cancelled. No config written.'));
       return 0;
+    }
+
+    // Backup existing config before overwrite
+    if (existing) {
+      const { configFile } = statePaths();
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupPath = `${configFile}.bak-${ts}`;
+      try {
+        fs.copyFileSync(configFile, backupPath);
+        console.log(info(`Backed up existing config to ${backupPath}`));
+      } catch (err) {
+        console.log(warn(`Could not back up existing config: ${err.message}`));
+      }
     }
 
     const path = writeConfig(cfg);

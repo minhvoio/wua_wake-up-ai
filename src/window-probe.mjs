@@ -28,7 +28,7 @@ export async function probeWindow() {
       headers: {
         Authorization: `Bearer ${token}`,
         'anthropic-beta': 'oauth-2025-04-20',
-        'User-Agent': 'wua/0.1.0',
+        'User-Agent': 'wua/0.1.1',
       },
     });
     if (!res.ok) return null;

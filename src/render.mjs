@@ -211,7 +211,7 @@ function pctBar(pct) {
 function agentSummary({ schedulerStatus, cfg, lastRun, schedulerKind }) {
   const lines = [];
   lines.push(c.gray('  ---8<---'));
-  lines.push(c.gray(`  wua v0.1.0 on ${platformName()} using ${schedulerKind}.`));
+  lines.push(c.gray(`  wua v0.1.1 on ${platformName()} using ${schedulerKind}.`));
   if (cfg) {
     const fireT = { hour: cfg.targetHour, minute: cfg.fireMinute };
     const w = computeWindow(cfg.targetHour);
